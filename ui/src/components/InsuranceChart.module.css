@@ -1,0 +1,32 @@
+.container {
+  width: 100%;
+  margin: 1.5rem 0;
+}
+
+.svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.axisLabel {
+  font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+  font-size: 10px;
+  fill: #525252;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  border: 1px dashed #1a1a1a;
+  border-radius: 6px;
+  margin: 1.5rem 0;
+}
+
+.emptyText {
+  font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+  font-size: 0.75rem;
+  color: #525252;
+}

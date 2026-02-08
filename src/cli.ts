@@ -38,10 +38,12 @@ import { registerWithdrawInsurance } from "./commands/withdraw-insurance.js";
 // Provenance: adminless market lifecycle
 import { registerBurnAdmin } from "./commands/burn-admin.js";
 import { registerVerifyImmutability } from "./commands/verify-immutability.js";
+import { registerVerifyProgram } from "./commands/verify-program.js";
 
 // Provenance: insurance fund observability
 import { registerInsuranceStatus } from "./commands/insurance-status.js";
 import { registerInsuranceHealth } from "./commands/insurance-health.js";
+import { registerInsuranceHistory } from "./commands/insurance-history.js";
 
 // Provenance: credibility metrics
 import { registerCredibilityStatus } from "./commands/credibility-status.js";
@@ -109,10 +111,12 @@ export function createCli(): Command {
   // Provenance: adminless market lifecycle
   registerBurnAdmin(program);
   registerVerifyImmutability(program);
+  registerVerifyProgram(program);
 
   // Provenance: insurance fund observability
   registerInsuranceStatus(program);
   registerInsuranceHealth(program);
+  registerInsuranceHistory(program);
 
   // Provenance: credibility metrics
   registerCredibilityStatus(program);

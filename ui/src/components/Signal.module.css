@@ -1,0 +1,35 @@
+.signal {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotHealthy {
+  background: rgba(74, 222, 128, 0.7);
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.3);
+}
+
+.dotWarn {
+  background: rgba(251, 191, 36, 0.6);
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.2);
+}
+
+.label {
+  font-size: 0.8125rem;
+  color: #d4d4d4;
+}
+
+.detail {
+  font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+  font-size: 0.75rem;
+  color: #525252;
+  margin-left: auto;
+}

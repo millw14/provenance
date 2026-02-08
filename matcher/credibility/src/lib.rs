@@ -1,9 +1,9 @@
 //! Credibility-Aware Matcher for Percolator
 //!
-//! A deterministic, autonomous matcher whose pricing depends on:
-//! - Net open interest imbalance
-//! - Insurance fund size relative to open interest
-//! - Market age and solvency streak
+//! A deterministic, autonomous matcher whose pricing depends on one
+//! credibility signal: insurance fund size relative to open interest.
+//!
+//! Higher coverage → tighter spreads. Lower coverage → wider spreads.
 //!
 //! The matcher requires no human input and signs quotes autonomously.
 //! All pricing parameters are derived from on-chain state.
@@ -105,10 +105,9 @@ fn process_instruction(
 // Match Instruction (tag 0x00)
 //
 // Called by percolator via CPI. Determines execution price based on:
-// 1. Base spread
-// 2. Inventory imbalance adjustment
-// 3. Insurance fund coverage discount
-// 4. Market age discount
+// 1. Base spread (min_spread_bps)
+// 2. Inventory imbalance adjustment (standard market-making)
+// 3. Insurance fund coverage discount (the ONE credibility signal)
 //
 // Accounts: [lp_pda (signer), matcher_ctx (writable)]
 // Data: [tag(1), oracle_price_e6(8), trade_size(16)]
@@ -179,11 +178,9 @@ fn process_match(
     let inventory = read_i128(&ctx_data, CTX_BASE + CTX_INVENTORY_OFF);
     let max_inventory = read_u128(&ctx_data, CTX_BASE + CTX_MAX_INVENTORY_OFF);
 
-    // Read credibility parameters
+    // Read credibility signal: insurance fund coverage
     let insurance_snapshot = read_u128(&ctx_data, CTX_BASE + CTX_INSURANCE_OFF);
     let total_oi_snapshot = read_u128(&ctx_data, CTX_BASE + CTX_TOTAL_OI_OFF);
-    let market_age_slots = read_u64(&ctx_data, CTX_BASE + CTX_MARKET_AGE_OFF);
-    let age_halflife = read_u32(&ctx_data, CTX_BASE + CTX_AGE_HALFLIFE_OFF) as u64;
     let insurance_weight_bps = read_u32(&ctx_data, CTX_BASE + CTX_INSURANCE_WEIGHT_OFF) as u64;
 
     // Enforce max fill
@@ -205,16 +202,18 @@ fn process_match(
 
     // =========================================================================
     // Pricing Logic: Deterministic spread calculation
+    //
+    // One credibility signal: insurance fund balance / open interest.
+    // Higher coverage → tighter spreads. That's it.
     // =========================================================================
 
-    // 1. Base spread
+    // 1. Start at base spread
     let mut spread_bps = min_spread_bps;
 
-    // 2. Inventory imbalance adjustment
-    // Wider spread when inventory is skewed in the direction of the trade
+    // 2. Inventory imbalance adjustment (standard market-making, not credibility)
+    //    Wider spread when inventory is skewed
     if liquidity_e6 > 0 && imbalance_k_bps > 0 {
         let inventory_abs = inventory.unsigned_abs();
-        // imbalance_cost = imbalance_k_bps * |inventory| / liquidity
         let imbalance_cost = (imbalance_k_bps as u128)
             .checked_mul(inventory_abs)
             .unwrap_or(u128::MAX)
@@ -222,10 +221,10 @@ fn process_match(
         spread_bps = spread_bps.saturating_add(imbalance_cost as u64);
     }
 
-    // 3. Insurance fund coverage discount
-    // Larger insurance fund relative to OI → tighter spreads
-    // discount = insurance_weight_bps * (insurance / max(oi, 1))
-    // Capped at insurance_weight_bps (100% discount when insurance >= OI)
+    // 3. Insurance coverage discount (THE credibility signal)
+    //    coverage = insurance_balance / open_interest (capped at 100%)
+    //    discount = coverage * insurance_weight_bps
+    //    More insurance relative to OI → lower spreads
     if insurance_weight_bps > 0 && total_oi_snapshot > 0 {
         let coverage_ratio_bps = ((insurance_snapshot as u128) * (BPS as u128))
             .checked_div(total_oi_snapshot as u128)
@@ -238,18 +237,8 @@ fn process_match(
         spread_bps = spread_bps.saturating_sub(discount);
     }
 
-    // 4. Market age discount
-    // Older, solvent markets get tighter spreads
-    // discount = min_spread_bps * age / (age + halflife)
-    // This is a hyperbolic discount: at age = halflife, discount = 50%
-    if age_halflife > 0 && market_age_slots > 0 {
-        let age_discount = (min_spread_bps * market_age_slots)
-            / (market_age_slots + age_halflife);
-        spread_bps = spread_bps.saturating_sub(age_discount);
-    }
-
-    // 5. Clamp to [min, max]
-    spread_bps = spread_bps.clamp(1, max_spread_bps); // Never zero spread
+    // 4. Clamp to [1, max_spread_bps]
+    spread_bps = spread_bps.clamp(1, max_spread_bps);
 
     // 6. Calculate execution price
     let total_cost_bps = spread_bps + base_fee_bps;
@@ -530,43 +519,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_spread_calculation_no_credibility() {
-        // With zero insurance and zero age, spread should be at max
+    fn test_no_insurance_no_discount() {
+        // Zero insurance → no discount → spread stays at min
         let min_spread: u64 = 20;
         let max_spread: u64 = 200;
         let insurance_weight: u64 = 50;
-        let age_halflife: u64 = 1_000_000;
 
         let insurance: u128 = 0;
         let total_oi: u128 = 1_000_000;
-        let market_age: u64 = 0;
 
         let mut spread = min_spread;
 
-        // No insurance discount (insurance = 0)
         if insurance_weight > 0 && total_oi > 0 {
             let coverage = (insurance * BPS as u128) / total_oi;
             let discount = (coverage.min(BPS as u128) as u64 * insurance_weight) / BPS;
             spread = spread.saturating_sub(discount);
         }
 
-        // No age discount (age = 0)
-        if age_halflife > 0 && market_age > 0 {
-            let age_discount = (min_spread * market_age) / (market_age + age_halflife);
-            spread = spread.saturating_sub(age_discount);
-        }
-
         spread = spread.clamp(1, max_spread);
-        assert_eq!(spread, min_spread); // No discounts applied
+        assert_eq!(spread, min_spread);
     }
 
     #[test]
-    fn test_spread_with_full_insurance() {
+    fn test_full_insurance_full_discount() {
+        // 100% coverage → full discount (insurance_weight_bps)
         let min_spread: u64 = 100;
-        let insurance_weight: u64 = 50; // 50 bps max discount from insurance
+        let insurance_weight: u64 = 50;
 
         let insurance: u128 = 1_000_000;
-        let total_oi: u128 = 1_000_000; // 100% coverage
+        let total_oi: u128 = 1_000_000;
 
         let mut spread = min_spread;
 
@@ -574,22 +555,44 @@ mod tests {
         let discount = (coverage.min(BPS as u128) as u64 * insurance_weight) / BPS;
         spread = spread.saturating_sub(discount);
 
-        // 100% coverage → full insurance_weight discount
         assert_eq!(spread, min_spread - insurance_weight);
     }
 
     #[test]
-    fn test_spread_with_age() {
+    fn test_half_insurance_half_discount() {
+        // 50% coverage → half of insurance_weight discount
         let min_spread: u64 = 100;
-        let age_halflife: u64 = 1_000_000;
-        let market_age: u64 = 1_000_000; // At halflife
+        let insurance_weight: u64 = 50;
+
+        let insurance: u128 = 500_000;
+        let total_oi: u128 = 1_000_000;
 
         let mut spread = min_spread;
 
-        let age_discount = (min_spread * market_age) / (market_age + age_halflife);
-        spread = spread.saturating_sub(age_discount);
+        let coverage = (insurance * BPS as u128) / total_oi;
+        let discount = (coverage.min(BPS as u128) as u64 * insurance_weight) / BPS;
+        spread = spread.saturating_sub(discount);
 
-        // At halflife, discount = 50%
-        assert_eq!(spread, 50);
+        // 50% of 50 = 25 bps discount
+        assert_eq!(spread, 75);
+    }
+
+    #[test]
+    fn test_excess_insurance_caps_at_weight() {
+        // 200% coverage → discount capped at insurance_weight (not 2x)
+        let min_spread: u64 = 100;
+        let insurance_weight: u64 = 50;
+
+        let insurance: u128 = 2_000_000;
+        let total_oi: u128 = 1_000_000;
+
+        let mut spread = min_spread;
+
+        let coverage = (insurance * BPS as u128) / total_oi;
+        let discount = (coverage.min(BPS as u128) as u64 * insurance_weight) / BPS;
+        spread = spread.saturating_sub(discount);
+
+        // Capped at 50 bps (not 100)
+        assert_eq!(spread, min_spread - insurance_weight);
     }
 }

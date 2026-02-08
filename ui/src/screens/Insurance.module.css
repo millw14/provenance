@@ -1,0 +1,36 @@
+.root {
+  display: flex;
+  flex-direction: column;
+}
+
+.heading {
+  font-size: 1rem;
+  font-weight: 400;
+  color: #e5e5e5;
+  margin-bottom: 0.5rem;
+}
+
+.description {
+  font-size: 0.8125rem;
+  color: #525252;
+  line-height: 1.5;
+  max-width: 600px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
+
+.footer {
+  border-top: 1px solid #1a1a1a;
+  padding-top: 1rem;
+}
+
+.footerText {
+  font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+  font-size: 0.75rem;
+  color: #525252;
+}

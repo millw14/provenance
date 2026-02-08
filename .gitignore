@@ -3,3 +3,7 @@ dist/
 *.log
 .DS_Store
 .env
+package-lock.json
+devnet-market.json
+matcher-deploy.json
+target/
