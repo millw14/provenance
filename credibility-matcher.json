@@ -1,0 +1,15 @@
+{
+  "credibilityMatcherProgram": "CeBbeMPBvWBwMiCJUCDFjupvkdzrxRxqoEueskZBziyU",
+  "matcherContext": "3Ruu9gfPdZXigeVcUNyNgQA7NB8tkRx5uyCci6RTURej",
+  "lpIndex": 2,
+  "lpPda": "9ftfPZP4SnCHbTyH31QpMfCsJL8KbJxvzYaMs9SfeLcf",
+  "slab": "75h2kF58m3ms77c8WwzQh6h4iT2XMA1F5Mk13FZ6CCUs",
+  "params": {
+    "baseFee": "5 bps",
+    "minSpread": "50 bps",
+    "maxSpread": "500 bps",
+    "imbalanceK": "100 bps",
+    "insuranceWeight": "50 bps",
+    "ageHalflife": "216000 slots (~1 day)"
+  }
+}

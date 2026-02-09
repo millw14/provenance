@@ -1,35 +1,28 @@
 {
   "network": "devnet",
-  "createdAt": "2026-02-04T02:18:58.509Z",
+  "createdAt": "2026-02-08T23:31:03.240Z",
   "programId": "2SSnp35m7FQ7cRLNKGdW5UzjYFF6RBUNq7d3m5mqNByp",
   "matcherProgramId": "4HcGCsyjAqnFua5ccuXyt8KRRQzKFbGTJkVChpS7Yfzy",
-  "slab": "A7wQtRT9DhFqYho8wTVqQCDc7kYPTUXGPATiyVbZKVFs",
+  "slab": "75h2kF58m3ms77c8WwzQh6h4iT2XMA1F5Mk13FZ6CCUs",
   "mint": "So11111111111111111111111111111111111111112",
-  "vault": "63juJmvm1XHCHveWv9WdanxqJX6tD6DLFTZD7dvH12dc",
-  "vaultPda": "4C6cZFwwDnEyL81YZPY9xBUnnBuM9gWHcvjpHa71y3V6",
+  "vault": "8yVk7ULLjErxGAUDU6a4LGpLmCvD7K69Z7dkSBvz74Th",
+  "vaultPda": "2CvrKJj3J44zu5Q7T3BRtrAod31mheXzH5JL5rmrbAoW",
   "oracle": "99B2bTijsU6f1GCT73HmdR7HCFFjGMBcPZY6jZ96ynrR",
-  "oracleType": "chainlink",
   "inverted": true,
+  "adminBurned": true,
+  "admin": "11111111111111111111111111111111",
+  "burnTx": "56eB17CAotbsdzuY5jLbQb52GwdoZpikmtwxSDzsvMe8yBSAUt39CLavJWdqFrnMWTdoTNS6gf4uCuSPF4koib2Z",
   "lp": {
     "index": 0,
-    "pda": "7YgxweQCVnBDfnP7hBdrBLV5NXpSLPS9mx6fgaGnH3jd",
-    "matcherContext": "5n3jT6iy9TK3XNMQarC1sK26zS8ofjLG3dvE9iDEFYhK",
-    "collateral": 15
+    "pda": "EwHyaBJ9X1AMvbfNPg7Dt2FfBLrsgAud9CgLTWJLWjU1",
+    "matcherContext": "2f856BSRqJ44SX2kbJEdFbf9uyqswGVckSbPnTsCMKWa"
   },
-  "insuranceFund": 1,
-  "admin": "A3Mu2nQdjJXhJkuUDBbF2BdvgDs5KodNE9XsetXNMrCK",
-  "adminAta": "7PTXsfTKCpQHPKZTsU1Mrdb3bwtExDeJGUmkaqkEbCrb",
-  "vammLp": {
-    "index": 4,
-    "pda": "CwfVwVayiuVxXmagcP8Rha7eow29NUtHzFNdzikCzA8h",
-    "matcherContext": "BUWfYszAAUuGkGiaMT9ahnkHeHFQ5MbC7STQdhS28cZF",
-    "collateral": 5,
-    "config": {
-      "mode": "vAMM",
-      "tradingFeeBps": 5,
-      "baseSpreadBps": 10,
-      "maxTotalBps": 200,
-      "impactKBps": 100
-    }
+  "insuranceFund": 0.5,
+  "frozenParams": {
+    "tradingFeeBps": 10,
+    "maintenanceMarginBps": 500,
+    "initialMarginBps": 1000,
+    "liquidationFeeBps": 100,
+    "maxCrankStalenessSlots": 200
   }
 }

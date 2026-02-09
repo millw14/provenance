@@ -49,8 +49,36 @@ const VERSION: u32 = 4;
 const KIND_CREDIBILITY: u8 = 2;
 
 // Return data layout (first 64 bytes of context account)
-const RET_EXEC_PRICE_OFF: usize = 0; // i64: signed execution price
-const RET_FILL_SIZE_OFF: usize = 8; // i128: signed fill size
+// Must match percolator-prog MatcherReturn ABI:
+//   0-4:   abi_version (u32) = 1
+//   4-8:   flags (u32) = VALID(1), PARTIAL_OK(2), REJECTED(4)
+//   8-16:  exec_price_e6 (u64)
+//   16-32: exec_size (i128)
+//   32-40: req_id (u64)
+//   40-48: lp_account_id (u64)
+//   48-56: oracle_price_e6 (u64)
+//   56-64: reserved (u64) = 0
+const RET_ABI_VERSION_OFF: usize = 0;
+const RET_FLAGS_OFF: usize = 4;
+const RET_EXEC_PRICE_OFF: usize = 8;
+const RET_EXEC_SIZE_OFF: usize = 16;
+const RET_REQ_ID_OFF: usize = 32;
+const RET_LP_ACCOUNT_ID_OFF: usize = 40;
+const RET_ORACLE_ECHO_OFF: usize = 48;
+const RET_RESERVED_OFF: usize = 56;
+
+const MATCHER_ABI_VERSION: u32 = 1;
+const FLAG_VALID: u32 = 1;
+
+// Matcher call input layout (67 bytes, sent by percolator-prog via CPI)
+//   0:     tag (u8) = 0
+//   1-9:   req_id (u64)
+//   9-11:  lp_idx (u16)
+//   11-19: lp_account_id (u64)
+//   19-27: oracle_price_e6 (u64)
+//   27-43: req_size (i128)
+//   43-67: reserved (24 bytes, must be zero)
+const CALL_LEN: usize = 67;
 
 // Context offsets (relative to byte 64 of the account)
 const CTX_MAGIC_OFF: usize = 0;
@@ -110,7 +138,10 @@ fn process_instruction(
 // 3. Insurance fund coverage discount (the ONE credibility signal)
 //
 // Accounts: [lp_pda (signer), matcher_ctx (writable)]
-// Data: [tag(1), oracle_price_e6(8), trade_size(16)]
+// Data: standard percolator CPI format (67 bytes)
+//   [tag(1), req_id(8), lp_idx(2), lp_account_id(8),
+//    oracle_price_e6(8), req_size(16), reserved(24)]
+// Returns: MatcherReturn (64 bytes at offset 0 of context account)
 // =============================================================================
 fn process_match(
     _program_id: &Pubkey,
@@ -120,8 +151,7 @@ fn process_match(
     if accounts.len() < 2 {
         return Err(ProgramError::NotEnoughAccountKeys);
     }
-    if data.len() < 25 {
-        // tag(1) + oracle_price_e6(8) + trade_size_i128(16)
+    if data.len() < CALL_LEN {
         return Err(ProgramError::InvalidInstructionData);
     }
 
@@ -157,11 +187,12 @@ fn process_match(
         return Err(ProgramError::InvalidAccountData);
     }
 
-    // Parse input
-    let oracle_price_e6 =
-        u64::from_le_bytes(data[1..9].try_into().unwrap());
-    let trade_size_bytes: [u8; 16] = data[9..25].try_into().unwrap();
-    let trade_size = i128::from_le_bytes(trade_size_bytes);
+    // Parse standard percolator CPI call format (67 bytes)
+    let req_id = u64::from_le_bytes(data[1..9].try_into().unwrap());
+    let _lp_idx = u16::from_le_bytes(data[9..11].try_into().unwrap());
+    let lp_account_id = u64::from_le_bytes(data[11..19].try_into().unwrap());
+    let oracle_price_e6 = u64::from_le_bytes(data[19..27].try_into().unwrap());
+    let trade_size = i128::from_le_bytes(data[27..43].try_into().unwrap());
 
     if oracle_price_e6 == 0 {
         msg!("ERROR: Zero oracle price");
@@ -257,12 +288,15 @@ fn process_match(
     write_u64(&mut ctx_data, CTX_BASE + CTX_LAST_ORACLE_OFF, oracle_price_e6);
     write_u64(&mut ctx_data, CTX_BASE + CTX_LAST_EXEC_OFF, exec_price_e6);
 
-    // Write return data: exec_price (i64) + fill_size (i128)
-    let exec_price_i64 = exec_price_e6 as i64;
-    ctx_data[RET_EXEC_PRICE_OFF..RET_EXEC_PRICE_OFF + 8]
-        .copy_from_slice(&exec_price_i64.to_le_bytes());
-    ctx_data[RET_FILL_SIZE_OFF..RET_FILL_SIZE_OFF + 16]
-        .copy_from_slice(&trade_size.to_le_bytes());
+    // Write standard MatcherReturn (64 bytes at offset 0)
+    write_u32(&mut ctx_data, RET_ABI_VERSION_OFF, MATCHER_ABI_VERSION);
+    write_u32(&mut ctx_data, RET_FLAGS_OFF, FLAG_VALID);
+    write_u64(&mut ctx_data, RET_EXEC_PRICE_OFF, exec_price_e6);
+    write_i128(&mut ctx_data, RET_EXEC_SIZE_OFF, trade_size);
+    write_u64(&mut ctx_data, RET_REQ_ID_OFF, req_id);
+    write_u64(&mut ctx_data, RET_LP_ACCOUNT_ID_OFF, lp_account_id);
+    write_u64(&mut ctx_data, RET_ORACLE_ECHO_OFF, oracle_price_e6);
+    write_u64(&mut ctx_data, RET_RESERVED_OFF, 0);
 
     msg!(
         "credibility-match: spread={}bps fee={}bps price={} size={}",
