@@ -32,6 +32,7 @@ interface LpQuote {
   totalEdgeBps: number;
   feeBps: number;
   spreadBps: number;
+  impactBps: number;
   capital: bigint;
   position: bigint;
 }
@@ -68,16 +69,27 @@ function kindLabel(kind: number): string {
 /**
  * Compute bid/ask using actual matcher parameters.
  * For passive: totalEdge = fee + spread.
- * For vAMM: same base, but vAMM adds trade-size impact on-chain (not estimable here).
+ * For vAMM/custom: adds trade-size impact when --size is provided.
+ *   On-chain formula: impact = abs_notional_e6 * impactK / liquidity.
  * Capped at maxTotalBps.
  */
 function computeQuote(
   oraclePrice: bigint,
   params: MatcherParams,
-): { bid: bigint; ask: bigint; totalEdgeBps: number; feeBps: number; spreadBps: number } {
+  tradeSizeE6: bigint | null,
+): { bid: bigint; ask: bigint; totalEdgeBps: number; feeBps: number; spreadBps: number; impactBps: number } {
   const feeBps = BigInt(params.feeBps);
   const spreadBps = BigInt(params.spreadBps);
-  let totalEdgeBps = feeBps + spreadBps;
+  let impactBps = 0n;
+
+  // Impact is only estimable with a trade size — matches on-chain formula:
+  // impact = abs_notional_e6 * impact_k_bps / liquidity_notional_e6
+  if (tradeSizeE6 !== null && params.impactKBps > 0 && params.liquidityE6 > 0n) {
+    const absNotional = tradeSizeE6 < 0n ? -tradeSizeE6 : tradeSizeE6;
+    impactBps = (absNotional * BigInt(params.impactKBps)) / params.liquidityE6;
+  }
+
+  let totalEdgeBps = feeBps + spreadBps + impactBps;
 
   if (params.maxTotalBps > 0 && totalEdgeBps > BigInt(params.maxTotalBps)) {
     totalEdgeBps = BigInt(params.maxTotalBps);
@@ -93,6 +105,7 @@ function computeQuote(
     totalEdgeBps: Number(totalEdgeBps),
     feeBps: Number(feeBps),
     spreadBps: Number(spreadBps),
+    impactBps: Number(impactBps),
   };
 }
 
@@ -110,6 +123,7 @@ export function registerBestPrice(program: Command): void {
     .description("Scan LPs and find best prices for trading")
     .requiredOption("--slab <pubkey>", "Slab account public key")
     .requiredOption("--oracle <pubkey>", "Price oracle account")
+    .option("--size <notional>", "Trade size in notional (e6) for impact estimation")
     .action(async (opts, cmd) => {
       const flags = getGlobalFlags(cmd);
       const config = loadConfig(flags);
@@ -117,6 +131,9 @@ export function registerBestPrice(program: Command): void {
 
       const slabPk = validatePublicKey(opts.slab, "--slab");
       const oraclePk = validatePublicKey(opts.oracle, "--oracle");
+
+      // Optional: trade size for impact estimation
+      const tradeSizeE6: bigint | null = opts.size ? BigInt(opts.size) : null;
 
       // Fetch slab and oracle in parallel
       const [slabData, oracleData] = await Promise.all([
@@ -173,7 +190,7 @@ export function registerBestPrice(program: Command): void {
           kind: 0, feeBps: 0, spreadBps: 50, maxTotalBps: 0, impactKBps: 0, liquidityE6: 0n,
         };
         const p = params ?? fallbackParams;
-        const quote = computeQuote(oraclePrice, p);
+        const quote = computeQuote(oraclePrice, p, tradeSizeE6);
 
         quotes.push({
           lpIndex: idx,
@@ -184,6 +201,7 @@ export function registerBestPrice(program: Command): void {
           totalEdgeBps: quote.totalEdgeBps,
           feeBps: quote.feeBps,
           spreadBps: quote.spreadBps,
+          impactBps: quote.impactBps,
           capital: account.capital,
           position: account.positionSize,
         });
@@ -209,6 +227,7 @@ export function registerBestPrice(program: Command): void {
             totalEdgeBps: q.totalEdgeBps,
             feeBps: q.feeBps,
             spreadBps: q.spreadBps,
+            impactBps: q.impactBps,
             capital: q.capital.toString(),
             position: q.position.toString(),
           })),
@@ -229,15 +248,23 @@ export function registerBestPrice(program: Command): void {
       } else {
         console.log("=== Best Price Scanner ===\n");
         console.log(`Oracle: $${oraclePriceUsd.toFixed(2)}`);
-        console.log(`LPs found: ${quotes.length}\n`);
+        console.log(`LPs found: ${quotes.length}`);
+        if (tradeSizeE6 !== null) {
+          console.log(`Trade size: ${tradeSizeE6.toString()} (e6 notional)`);
+        } else {
+          console.log(`Impact: omitted (pass --size for trade-size impact)`);
+        }
+        console.log();
 
         console.log("--- LP Quotes ---");
         for (const q of quotes) {
           const bidUsd = Number(q.bid) / Math.pow(10, oracleData.decimals);
           const askUsd = Number(q.ask) / Math.pow(10, oracleData.decimals);
           const capitalSol = Number(q.capital) / 1e9;
+          const parts = [`fee=${q.feeBps}`, `spread=${q.spreadBps}`];
+          if (q.impactBps > 0) parts.push(`impact=${q.impactBps}`);
           console.log(
-            `LP ${q.lpIndex} [${q.matcherKind}] (${q.totalEdgeBps}bps = fee=${q.feeBps}+spread=${q.spreadBps}): ` +
+            `LP ${q.lpIndex} [${q.matcherKind}] (${q.totalEdgeBps}bps = ${parts.join("+")}): ` +
             `bid=$${bidUsd.toFixed(4)} ask=$${askUsd.toFixed(4)} ` +
             `capital=${capitalSol.toFixed(2)}SOL pos=${q.position}`
           );
